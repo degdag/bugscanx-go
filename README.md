@@ -41,7 +41,7 @@ Here's an enhanced version of your installation and usage guide with a cleaner a
 ### 🚩 **Step 1: Install BugScanX-Go**  
 Use the following command to install the latest version of BugScanX-Go:  
 ```bash
-go install -v github.com/Ayanrajpoot/bugscanx-go@latest
+go install -v github.com/Ayanrajpoot10/bugscanx-go@latest
 ```
 
 ---
