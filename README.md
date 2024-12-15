@@ -1,67 +1,49 @@
-# Bugscanner Go
+# BugScanX-Go
 
-This tool is dedicated to [DARKTUNNEL.NET](https://www.darktunnel.net), please support us if you find this tool useful.
+**A Better Version of BugScanner-Go**
 
-Join to our telegram group @darktunnel_group or click [here](https://t.me/darktunnel_group).
+Welcome to BugScanX-Go, the latest iteration of the BugScanner-Go project. This tool is designed to streamline bug hunting and security scanning with enhanced features, improved functionality, and robust performance. Help us reach **20 stars** on this repository, and we’ll release the latest code for everyone to enjoy!
 
+---
 
-Install
--------
+## 🚀 Sneak Peek of BugScanX-Go (formerly BugHunter-Go):
 
-**Latest Release**
+Exciting updates are here! We’ve been working hard to make BugScanX-Go the ultimate bug-hunting tool. Here’s what’s new:
 
-	go install -v github.com/aztecrabbit/bugscanner-go@latest
+- **302 Response Removed**: Cleaner output by skipping 302 responses that redirect to recharge portals.
+- **All Server Types Saved**: Now saves all server results under the "Others" category, not just Cloudflare, CloudFront, and Akamai. Check out the [example output file](https://t.me/bugscanxchat/28847).
+- **More HTTP Methods**: Added support for methods like `GET`, `PATCH`, and `PUT` (default: `HEAD`). You can switch using the `--method` flag.
+- **Both HTTP and HTTPS**: Use the `--both-schemes` flag to scan both HTTP and HTTPS at the same time.
+- **New PING Scan**: A quick scanning option that’s faster than other methods.
 
-**Latest Commit**
+---
 
-	go install -v github.com/aztecrabbit/bugscanner-go@HEAD
+## 📝 Planned Release
 
+BugScanX-Go will be released along with a detailed tutorial for installation and usage once we reach **500 subscribers** or this post gets **150 reactions**. Stay tuned!
 
-#### Add go bin to PATH
+---
 
-**Bash**
+## 💡 Got Feedback?
 
-	echo 'PATH="$PATH:$HOME/go/bin"' >> $HOME/.bashrc && source $HOME/.bashrc
+We’re always looking to improve BugScanX-Go. If you have ideas, suggestions, or feedback, let us know by creating an issue or joining the conversation in our [Telegram group](https://t.me/bugscanxchat).
 
-**Zsh**
+---
 
-	echo 'PATH="$PATH:$HOME/go/bin"' >> $HOME/.zshrc && source $HOME/.zshrc
+## ⭐ How You Can Help
 
+Support the development by starring this repository. Help us reach **20 stars** to unlock the latest version for everyone!
 
-Usage
------
+---
 
-	bugscanner-go --help
+## 📖 Documentation
 
+Comprehensive documentation will be available upon release, covering:
 
-### Before Scanning
+1. Installation instructions
+2. Command-line options and flags
+3. Example use cases
 
-**1. Install subfinder (or any tool for finding subdomain)**
+---
 
-Visit subfinder repo if you want to install subfinder [here](https://github.com/projectdiscovery/subfinder#installation)
-
-
-**2. Scan subdomain using subfinder and save it to file**
-
-	subfinder -d example.com -o example.com.lst
-
-
-### Scanning
-
-#### Scan Direct
-
-	bugscanner-go scan direct -f example.com.lst -o cf.lst
-
-#### Scan CDN SSL
-
-	bugscanner-go scan cdn-ssl --proxy-filename cf.lst --target ws.example.com
-
-* target server response must be returning 101 status code.
-
-#### Scan Server Name Indication
-
-	bugscanner-go scan sni -f example.com.lst --threads 16 --timeout 8 --deep 3
-
-#### Note
-
-* Another subcommand for scanning will be updated soon.
+Stay connected and help shape the future of BugScanX-Go!
