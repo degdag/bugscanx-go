@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 <h1 align="center">🔍🐛 BugScanX-Go: Advanced SNI Bug Host Scanner 🐞🔍</h1>
 
 <p align="center">
@@ -16,17 +15,9 @@
       <img src="https://img.shields.io/badge/Telegram%20Chat-Join%20Chat-4c6ef5?style=for-the-badge&logo=telegram" alt="Telegram Chat" style="border-radius: 8px;">
    </a>
 </div>
-=======
-# BugScanX-Go
-
-**A Better Version of BugScanner-Go**
-
-Welcome to BugScanX-Go, the latest iteration of the BugScanner-Go project. This tool is designed to streamline bug hunting and security scanning with enhanced features, improved functionality, and robust performance. Help us reach **20 stars** on this repository, and we’ll release the latest code for everyone to enjoy!
->>>>>>> add171570839436abcbd6af51a1dd2f0e00b887d
 
 ---
 
-<<<<<<< HEAD
 ---
 
 ## 📜 Changelog
@@ -128,53 +119,5 @@ bugscanx-go scan dns -f exaple.txt -o save.txt
 
 ## Stargazers over time
 [![Stargazers over time](https://starchart.cc/Ayanrajpoot10/bugscanx-go.svg?variant=adaptive)](https://starchart.cc/Ayanrajpoot10/bugscanx-go)
-=======
-## 🚀 Sneak Peek of BugScanX-Go (formerly BugHunter-Go):
 
-Exciting updates are here! We’ve been working hard to make BugScanX-Go the ultimate bug-hunting tool. Here’s what’s new:
 
-- **302 Response Removed**: Cleaner output by skipping 302 responses that redirect to recharge portals.
-- **All Server Types Saved**: Now saves all server results under the "Others" category, not just Cloudflare, CloudFront, and Akamai. Check out the [example output file](https://t.me/bugscanxchat/28847).
-- **More HTTP Methods**: Added support for methods like `GET`, `PATCH`, and `PUT` (default: `HEAD`). You can switch using the `--method` flag.
-- **Both HTTP and HTTPS**: Use the `--both-schemes` flag to scan both HTTP and HTTPS at the same time.
-- **New PING Scan**: A quick scanning option that’s faster than other methods.
-
----
-
-## 📝 Planned Release
->>>>>>> add171570839436abcbd6af51a1dd2f0e00b887d
-
-BugScanX-Go will be released along with a detailed tutorial for installation and usage once we reach **500 subscribers** or this post gets **150 reactions**. Stay tuned!
-
-<<<<<<< HEAD
-=======
----
-
-## 💡 Got Feedback?
-
-We’re always looking to improve BugScanX-Go. If you have ideas, suggestions, or feedback, let us know by creating an issue or joining the conversation in our [Telegram group](https://t.me/bugscanxchat).
-
----
-
-## ⭐ How You Can Help
->>>>>>> add171570839436abcbd6af51a1dd2f0e00b887d
-
-Support the development by starring this repository. Help us reach **20 stars** to unlock the latest version for everyone!
-
-<<<<<<< HEAD
-
-=======
----
-
-## 📖 Documentation
-
-Comprehensive documentation will be available upon release, covering:
-
-1. Installation instructions
-2. Command-line options and flags
-3. Example use cases
-
----
-
-Stay connected and help shape the future of BugScanX-Go!
->>>>>>> add171570839436abcbd6af51a1dd2f0e00b887d
