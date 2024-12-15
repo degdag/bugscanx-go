@@ -1,6 +1,6 @@
 module github.com/Ayanrajpoot10/bugscanx-go
 
-go 1.23.4
+go 1.23.2
 
 require (
 	github.com/fatih/color v1.18.0
