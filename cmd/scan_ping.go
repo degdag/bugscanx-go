@@ -15,8 +15,6 @@ import (
 var pingCmd = &cobra.Command{
 	Use:   "ping",
 	Short: "Ping hosts specified in a file",
-	Long: `Ping hosts specified in a file and output the results.
-You can specify the timeout, number of threads, and output file for the results.`,
 	Run: pingRun,
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		if pingFlagFilename == "" {
@@ -25,9 +23,6 @@ You can specify the timeout, number of threads, and output file for the results.
 		if pingFlagTimeout <= 0 {
 			return fmt.Errorf("timeout must be greater than 0")
 		}
-		if pingFlagThreads <= 0 {
-			return fmt.Errorf("threads must be greater than 0")
-		}
 		return nil
 	},
 }
@@ -35,7 +30,6 @@ You can specify the timeout, number of threads, and output file for the results.
 var (
 	pingFlagFilename string
 	pingFlagTimeout  int
-	pingFlagThreads  int
 	pingFlagOutput   string
 	pingFlagTCP      bool
 	pingFlagPort     int
@@ -46,7 +40,6 @@ func init() {
 
 	pingCmd.Flags().StringVarP(&pingFlagFilename, "filename", "f", "", "File containing hosts to ping (required)")
 	pingCmd.Flags().IntVar(&pingFlagTimeout, "timeout", 2, "Ping timeout in seconds (must be greater than 0)")
-	pingCmd.Flags().IntVar(&pingFlagThreads, "threads", 64, "Number of threads (must be greater than 0)")
 	pingCmd.Flags().StringVarP(&pingFlagOutput, "output", "o", "", "File to write results")
 	pingCmd.Flags().BoolVar(&pingFlagTCP, "tcp", false, "Use TCP ping instead of ICMP")
 	pingCmd.Flags().IntVar(&pingFlagPort, "port", 80, "Port to use for TCP ping")
@@ -69,7 +62,7 @@ func pingRun(cmd *cobra.Command, args []string) {
 	colorM1.Printf("\n%-15s %-20s\n", "Status", "Host")
 	colorW1.Printf("%-15s %-20s\n", "--------", "--------")
 
-	scanner := queuescanner.NewQueueScanner(pingFlagThreads, pingHost)
+	scanner := queuescanner.NewQueueScanner(scanFlagThreads, pingHost)
 	for _, host := range hosts {
 		scanner.Add(&queuescanner.QueueScannerScanParams{Name: host, Data: host})
 	}

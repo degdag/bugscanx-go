@@ -26,7 +26,6 @@ var scanDirectCmd = &cobra.Command{
 
 var (
 	scanDirectFlagFilename   string
-	scanDirectFlagServerList string
 	scanDirectFlagHttps      bool
 	scanDirectFlagTimeout    int
 	scanDirectFlagOutput     string
@@ -38,7 +37,6 @@ func init() {
 	scanCmd.AddCommand(scanDirectCmd)
 
 	scanDirectCmd.Flags().StringVarP(&scanDirectFlagFilename, "filename", "f", "", "domain list filename")
-	scanDirectCmd.Flags().StringVarP(&scanDirectFlagServerList, "server-list", "s", "all", "server list")
 	scanDirectCmd.Flags().BoolVar(&scanDirectFlagHttps, "https", false, "use https")
 	scanDirectCmd.Flags().IntVar(&scanDirectFlagTimeout, "timeout", 3, "connect timeout")
 	scanDirectCmd.Flags().StringVarP(&scanDirectFlagOutput, "output", "o", "", "output result")
@@ -107,58 +105,31 @@ func scanDirect(c *queuescanner.Ctx, p *queuescanner.QueueScannerScanParams) {
 
 		hServer := httpRes.Header.Get("Server")
 		hServerLower := strings.ToLower(hServer)
-		hCfRay := httpRes.Header.Get("CF-RAY")
 		hLocation := httpRes.Header.Get("Location")
 
-		if hLocation == "https://jio.com/BalanceExhaust" {
+		if strings.Contains(hLocation, "BalanceExhaust") {
 			return
 		}
 
 		var resColor *color.Color
 
-		isHiddenCloudflare := slices.Contains(req.ServerList, "cloudflare") && hCfRay != "" && hServerLower != "cloudflare"
-
-		if slices.Contains(req.ServerList, hServerLower) || isHiddenCloudflare {
-			if isHiddenCloudflare {
-				resColor = colorG1
-				hServer = fmt.Sprintf("%s (cf)", hServer)
-			} else {
-				switch hServerLower {
-				case "cloudflare":
-					resColor = colorG1
-				case "akamaighost":
-					resColor = colorY1
-				case "akamai":
-					resColor = colorY1
-				case "cloudfront":
-					resColor = colorC1
-				case "amazons3":
-					resColor = colorC1
-				case "apache":
-					resColor = colorW1
-				case "nginx":
-					resColor = colorW1
-				case "varnish":
-					resColor = colorM1
-				case "fastly":
-					resColor = colorM1
-				case "microsoft":
-					resColor = colorC2
-				case "azure":
-					resColor = colorC2
-				case "cachefly":
-					resColor = colorY2
-				case "Alibaba":
-					resColor = colorY2
-				case "Tencent":
-					resColor = colorM2
-				default:
-					resColor = colorB1
-					hServer = fmt.Sprintf("%s others", hServer)
-				}
-				if len(req.ServerList) == 1 {
-					resColor = colorG1
-				}
+		if slices.Contains(req.ServerList, hServerLower) {
+			serverColors := map[string]*color.Color{
+				"cloudflare":   colorG1,
+				"akamaighost":  colorY1,
+				"akamai":       colorY1,
+				"cloudfront":   colorC1,
+				"amazons3":     colorC1,
+				"varnish":      colorM1,
+				"fastly":       colorM1,
+				"microsoft":    colorC2,
+				"azure":        colorC2,
+				"cachefly":     colorY2,
+				"alibaba":      colorY2,
+				"tencent":      colorM2,
+			}
+			if color, exists := serverColors[hServerLower]; exists {
+				resColor = color
 			}
 			res := &scanDirectResponse{
 				Color:      resColor,
@@ -166,7 +137,7 @@ func scanDirect(c *queuescanner.Ctx, p *queuescanner.QueueScannerScanParams) {
 				NetIPList:  netIPList,
 				StatusCode: httpRes.StatusCode,
 				Server:     hServer,
-				Location:   hLocation,
+				
 			}
 			c.ScanSuccess(res, nil)
 		} else {
@@ -177,22 +148,18 @@ func scanDirect(c *queuescanner.Ctx, p *queuescanner.QueueScannerScanParams) {
 				NetIPList:  netIPList,
 				StatusCode: httpRes.StatusCode,
 				Server:     "others",
-				Location:   hLocation,
+				
 			}
 			c.ScanSuccess(res, nil)
 		}
 
-		if hLocation != "" {
-			hLocation = fmt.Sprintf(" -> %s", hLocation)
-		}
-
 		s := fmt.Sprintf(
-			"%-15s  %-3d  %-16s    %s%s",
+			"%-15s  %-3d  %-16s    %s",
 			ip,
 			httpRes.StatusCode,
 			hServer,
 			req.Domain,
-			hLocation,
+			
 		)
 
 		s = resColor.Sprint(s)
@@ -203,43 +170,26 @@ func scanDirect(c *queuescanner.Ctx, p *queuescanner.QueueScannerScanParams) {
 }
 
 func scanDirectRun(cmd *cobra.Command, args []string) {
-	domainList := make(map[string]bool)
 	domainListFile, err := os.Open(scanDirectFlagFilename)
-	if err != nil {
+	if (err != nil) {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 	defer domainListFile.Close()
 
-	scanner := bufio.NewScanner(domainListFile)
-	for scanner.Scan() {
-		domain := scanner.Text()
-		domainList[domain] = true
-	}
-
-	var serverList []string
-
-	scanDirectFlagServerListLower := strings.ToLower(scanDirectFlagServerList)
-
-	if scanDirectFlagServerListLower == "all" {
-		serverList = []string{
-			"cloudflare",
-			"cloudfront",
-			"akamaighost",
-			"akamai",
-			"amazons3",
-			"apache",
-			"nginx",
-			"varnish",
-			"fastly",
-			"microsoft",
-			"azure",
-			"cachefly",
-			"alibaba",
-			"tencent",
-		}
-	} else {
-		serverList = strings.Split(scanDirectFlagServerListLower, ",")
+	var serverList = []string{
+		"cloudflare",
+		"cloudfront",
+		"akamaighost",
+		"akamai",
+		"amazons3",
+		"varnish",
+		"fastly",
+		"microsoft",
+		"azure",
+		"cachefly",
+		"alibaba",
+		"tencent",
 	}
 
 	queueScanner := queuescanner.NewQueueScanner(scanFlagThreads, scanDirect)
@@ -250,7 +200,9 @@ func scanDirectRun(cmd *cobra.Command, args []string) {
 	colorG1.Printf("%-20s\n", "HOST")
 	colorW1.Printf("%-15s  %-3s  %-16s    %-20s\n", "----", "----", "------", "----")
 
-	for domain := range domainList {
+	scanner := bufio.NewScanner(domainListFile)
+	for scanner.Scan() {
+		domain := scanner.Text()
 		queueScanner.Add(&queuescanner.QueueScannerScanParams{
 			Name: domain,
 			Data: &scanDirectRequest{
@@ -260,6 +212,7 @@ func scanDirectRun(cmd *cobra.Command, args []string) {
 			},
 		})
 	}
+
 	queueScanner.Start(func(c *queuescanner.Ctx) {
 		if len(c.ScanSuccessList) == 0 {
 			return
@@ -338,11 +291,19 @@ func scanDirectRun(cmd *cobra.Command, args []string) {
 		outputList = append(outputList, ipList...)
 
 		if scanDirectFlagOutput != "" {
-			err := os.WriteFile(scanDirectFlagOutput, []byte(strings.Join(outputList, "\n")), 0644)
+			outputFile, err := os.Create(scanDirectFlagOutput)
 			if err != nil {
 				fmt.Println(err.Error())
 				os.Exit(1)
 			}
+			defer outputFile.Close()
+
+			writer := bufio.NewWriter(outputFile)
+			for _, line := range outputList {
+				writer.WriteString(line + "\n")
+			}
+			writer.Flush()
+
 			fmt.Print(colorG1.Sprintf("✅ Results saved to %s\n", scanDirectFlagOutput))
 		}
 	})
