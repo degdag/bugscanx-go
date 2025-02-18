@@ -8,16 +8,13 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/Ayanrajpoot10/bugscanx-go/pkg/queuescanner"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
-// scanDirectCmd represents the scanDirect command
 var scanDirectCmd = &cobra.Command{
 	Use:   "direct",
 	Short: "Scan using direct connection",
@@ -25,36 +22,32 @@ var scanDirectCmd = &cobra.Command{
 }
 
 var (
-	scanDirectFlagFilename   string
-	scanDirectFlagHttps      bool
-	scanDirectFlagTimeout    int
-	scanDirectFlagOutput     string
-	scanDirectFlagMethod     string
-	scanDirectFlagBothSchemes bool
+	scanDirectFlagFilename string
+	scanDirectFlagHttps    bool
+	scanDirectFlagTimeout  int
+	scanDirectFlagOutput   string
+	scanDirectFlagMethod   string
 )
 
 func init() {
 	scanCmd.AddCommand(scanDirectCmd)
 
 	scanDirectCmd.Flags().StringVarP(&scanDirectFlagFilename, "filename", "f", "", "domain list filename")
-	scanDirectCmd.Flags().BoolVar(&scanDirectFlagHttps, "https", false, "use https")
+	scanDirectCmd.Flags().StringVarP(&scanDirectFlagMethod, "method", "m", "HEAD", "HTTP method (e.g. GET, POST)")
 	scanDirectCmd.Flags().IntVar(&scanDirectFlagTimeout, "timeout", 3, "connect timeout")
 	scanDirectCmd.Flags().StringVarP(&scanDirectFlagOutput, "output", "o", "", "output result")
-	scanDirectCmd.Flags().StringVar(&scanDirectFlagMethod, "method", "HEAD", "HTTP method to use (e.g., GET, POST, etc.)")
-	scanDirectCmd.Flags().BoolVar(&scanDirectFlagBothSchemes, "both-schemes", false, "scan both HTTP and HTTPS")
-
-	scanDirectCmd.MarkFlagFilename("filename")
+	scanDirectCmd.Flags().BoolVar(&scanDirectFlagHttps, "https", false, "use https")
+	
 	scanDirectCmd.MarkFlagRequired("filename")
 }
 
 type scanDirectRequest struct {
-	Domain     string
-	Https      bool
-	ServerList []string
+	Domain string
+	Https  bool
+	Method string
 }
 
 type scanDirectResponse struct {
-	Color      *color.Color
 	Request    *scanDirectRequest
 	NetIPList  []net.IP
 	StatusCode int
@@ -74,237 +67,115 @@ var httpClient = &http.Client{
 	Timeout: 10 * time.Second,
 }
 
-var ctxBackground = context.Background()
-
 func scanDirect(c *queuescanner.Ctx, p *queuescanner.QueueScannerScanParams) {
 	req := p.Data.(*scanDirectRequest)
 
-	ctxTimeout, cancel := context.WithTimeout(ctxBackground, 3*time.Second)
+	ctxTimeout, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	netIPList, err := net.DefaultResolver.LookupIP(ctxTimeout, "ip4", req.Domain)
 	if err != nil {
 		return
 	}
-	ip := netIPList[0].String()
 
-	schemes := []string{"http"}
-	if req.Https || scanDirectFlagBothSchemes {
-		schemes = append(schemes, "https")
+	httpScheme := "http"
+	if req.Https {
+		httpScheme = "https"
 	}
-	for _, scheme := range schemes {
-		method := strings.ToUpper(scanDirectFlagMethod)
-		httpReq, err := http.NewRequest(method, fmt.Sprintf("%s://%s", scheme, req.Domain), nil)
-		if err != nil {
-			continue
-		}
 
-		httpRes, err := httpClient.Do(httpReq)
-		if err != nil {
-			continue
-		}
+	httpReq, err := http.NewRequestWithContext(ctxTimeout, req.Method, httpScheme+"://"+req.Domain, nil)
+	if err != nil {
+		return
+	}
 
-		hServer := httpRes.Header.Get("Server")
-		hServerLower := strings.ToLower(hServer)
-		hLocation := httpRes.Header.Get("Location")
+	httpRes, err := httpClient.Do(httpReq)
+	if err != nil {
+		return
+	}
 
-		if strings.Contains(hLocation, "BalanceExhaust") {
+	if httpRes.StatusCode == 302 {
+		if location := httpRes.Header.Get("Location"); location == "https://jio.com/BalanceExhaust" {
 			return
 		}
-
-		var resColor *color.Color
-
-		if slices.Contains(req.ServerList, hServerLower) {
-			serverColors := map[string]*color.Color{
-				"cloudflare":   colorG1,
-				"akamaighost":  colorY1,
-				"akamai":       colorY1,
-				"cloudfront":   colorC1,
-				"amazons3":     colorC1,
-				"varnish":      colorM1,
-				"fastly":       colorM1,
-				"microsoft":    colorC2,
-				"azure":        colorC2,
-				"cachefly":     colorY2,
-				"alibaba":      colorY2,
-				"tencent":      colorM2,
-			}
-			if color, exists := serverColors[hServerLower]; exists {
-				resColor = color
-			}
-			res := &scanDirectResponse{
-				Color:      resColor,
-				Request:    req,
-				NetIPList:  netIPList,
-				StatusCode: httpRes.StatusCode,
-				Server:     hServer,
-				
-			}
-			c.ScanSuccess(res, nil)
-		} else {
-			resColor = colorB1
-			res := &scanDirectResponse{
-				Color:      resColor,
-				Request:    req,
-				NetIPList:  netIPList,
-				StatusCode: httpRes.StatusCode,
-				Server:     "others",
-				
-			}
-			c.ScanSuccess(res, nil)
-		}
-
-		s := fmt.Sprintf(
-			"%-15s  %-3d  %-16s    %s",
-			ip,
-			httpRes.StatusCode,
-			hServer,
-			req.Domain,
-			
-		)
-
-		s = resColor.Sprint(s)
-
-		c.Log(s)
 	}
+
+	res := &scanDirectResponse{
+		Request:    req,
+		NetIPList:  netIPList,
+		StatusCode: httpRes.StatusCode,
+		Server:     httpRes.Header.Get("Server"),
+		Location:   httpRes.Header.Get("Location"),
+	}
+	c.ScanSuccess(res, nil)
+
+	c.Log(fmt.Sprintf("%-15s  %-3d  %-15s    %s", netIPList[0], httpRes.StatusCode, httpRes.Header.Get("Server"), req.Domain))
 
 }
 
 func scanDirectRun(cmd *cobra.Command, args []string) {
+	domainSet := make(map[string]struct{})
+
 	domainListFile, err := os.Open(scanDirectFlagFilename)
-	if (err != nil) {
+	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 	defer domainListFile.Close()
 
-	var serverList = []string{
-		"cloudflare",
-		"cloudfront",
-		"akamaighost",
-		"akamai",
-		"amazons3",
-		"varnish",
-		"fastly",
-		"microsoft",
-		"azure",
-		"cachefly",
-		"alibaba",
-		"tencent",
+	scanner := bufio.NewScanner(domainListFile)
+	for scanner.Scan() {
+		domain := strings.TrimSpace(scanner.Text())
+		if domain != "" {
+			domainSet[domain] = struct{}{}
+		}
+	}
+
+	domains := make([]string, 0, len(domainSet))
+	for domain := range domainSet {
+		domains = append(domains, domain)
 	}
 
 	queueScanner := queuescanner.NewQueueScanner(scanFlagThreads, scanDirect)
 
-	colorC1.Printf("\n%-15s  ", "IP")
-	colorY1.Printf("%-3s  ", "CODE")
-	colorM1.Printf("%-16s    ", "SERVER")
-	colorG1.Printf("%-20s\n", "HOST")
-	colorW1.Printf("%-15s  %-3s  %-16s    %-20s\n", "----", "----", "------", "----")
+	fmt.Printf("%-15s  %-3s  %-15s    %-20s\n", "IP", "CODE", "SERVER", "HOST")
+	fmt.Printf("%-15s  %-3s  %-15s    %-20s\n", "----", "----", "------", "----")
 
-	scanner := bufio.NewScanner(domainListFile)
-	for scanner.Scan() {
-		domain := scanner.Text()
-		queueScanner.Add(&queuescanner.QueueScannerScanParams{
+	scanParams := make([]*queuescanner.QueueScannerScanParams, 0, len(domains))
+	for _, domain := range domains {
+		scanParams = append(scanParams, &queuescanner.QueueScannerScanParams{
 			Name: domain,
 			Data: &scanDirectRequest{
-				Domain:     domain,
-				Https:      scanDirectFlagHttps,
-				ServerList: serverList,
+				Domain: domain,
+				Https:  scanDirectFlagHttps,
+				Method: scanDirectFlagMethod,
 			},
 		})
 	}
 
+	queueScanner.Add(scanParams...)
+
 	queueScanner.Start(func(c *queuescanner.Ctx) {
-		if len(c.ScanSuccessList) == 0 {
+		successList := c.ScanSuccessList.Load()
+		if len(*successList) == 0 {
 			return
 		}
 
 		c.Log("")
 
-		mapServerList := make(map[string][]*scanDirectResponse)
-
-		for _, data := range c.ScanSuccessList {
-			res, ok := data.(*scanDirectResponse)
-			if !ok {
-				continue
-			}
-
-			serverLower := strings.ToLower(res.Server)
-
-			if res.Server == "others" || !slices.Contains(serverList, serverLower) {
-				mapServerList["others"] = append(mapServerList["others"], res)
-			} else {
-				mapServerList[res.Server] = append(mapServerList[res.Server], res)
-			}
-		}
-
-		domainList := make([]string, 0)
-		ipList := make([]string, 0)
-
-		for server, resList := range mapServerList {
-			if len(resList) == 0 {
-				continue
-			}
-
-			var resColor *color.Color
-
-			mapIPList := make(map[string]bool)
-			mapDomainList := make(map[string]bool)
-
-			for _, res := range resList {
-				if resColor == nil {
-					resColor = res.Color
-				}
-
-				for _, netIP := range res.NetIPList {
-					ip := netIP.String()
-					mapIPList[ip] = true
-				}
-
-				mapDomainList[res.Request.Domain] = true
-			}
-
-			if server == "others" {
-				resColor = colorB1
-			}
-
-			c.Log(resColor.Sprintf("\n%s\n", server))
-
-			domainList = append(domainList, fmt.Sprintf("# %s", server))
-			for domain := range mapDomainList {
-				domainList = append(domainList, domain)
-				c.Log(resColor.Sprint(domain))
-			}
-			domainList = append(domainList, "")
-			c.Log("")
-
-			ipList = append(ipList, fmt.Sprintf("# %s", server))
-			for ip := range mapIPList {
-				ipList = append(ipList, ip)
-				c.Log(resColor.Sprint(ip))
-			}
-			ipList = append(ipList, "")
-			c.Log("")
-		}
-
-		outputList := make([]string, 0)
-		outputList = append(outputList, domainList...)
-		outputList = append(outputList, ipList...)
-
 		if scanDirectFlagOutput != "" {
-			outputFile, err := os.Create(scanDirectFlagOutput)
+			var outputContent strings.Builder
+			for _, success := range *successList {
+				res, ok := success.(*scanDirectResponse)
+				if !ok {
+					continue
+				}
+				outputContent.WriteString(res.Request.Domain)
+				outputContent.WriteByte('\n')
+			}
+
+			err := os.WriteFile(scanDirectFlagOutput, []byte(outputContent.String()), 0644)
 			if err != nil {
-				fmt.Println(err.Error())
-				os.Exit(1)
+				fmt.Printf("Failed to write output file: %v\n", err)
 			}
-			defer outputFile.Close()
-
-			writer := bufio.NewWriter(outputFile)
-			for _, line := range outputList {
-				writer.WriteString(line + "\n")
-			}
-			writer.Flush()
-
-			fmt.Print(colorG1.Sprintf("✅ Results saved to %s\n", scanDirectFlagOutput))
 		}
 	})
 }
