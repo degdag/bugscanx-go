@@ -290,13 +290,13 @@ func runScanCdnSsl(cmd *cobra.Command, args []string) {
 	fmt.Printf("%s\n\n", getScanCdnSslPayloadDecoded())
 
 	queueScanner.Start(func(c *queuescanner.Ctx) {
-		if len(*c.ScanSuccessList.Load()) == 0 {
+		if len(c.ScanSuccessList) == 0 {
 			return
 		}
 
 		c.Logf("")
 
-		jsonBytes, err := json.MarshalIndent(*c.ScanSuccessList.Load(), "", "  ")
+		jsonBytes, err := json.MarshalIndent(c.ScanSuccessList, "", "  ")
 		if err != nil {
 			fmt.Println(err.Error())
 			os.Exit(1)

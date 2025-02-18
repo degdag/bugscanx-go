@@ -5,26 +5,19 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	terminal "github.com/wayneashleyberry/terminal-dimensions"
 )
 
 type Ctx struct {
-	ScanSuccessList atomic.Pointer[[]interface{}]
-	ScanFailedList  atomic.Pointer[[]interface{}]
-	ScanComplete    int32
-	dataList        []*QueueScannerScanParams
-	context.Context
-}
+	ScanSuccessList []interface{}
+	ScanFailedList  []interface{}
+	ScanComplete    int
 
-func NewCtx() *Ctx {
-	successList := []interface{}{}
-	failedList := []interface{}{}
-	ctx := &Ctx{}
-	ctx.ScanSuccessList.Store(&successList)
-	ctx.ScanFailedList.Store(&failedList)
-	return ctx
+	dataList []*QueueScannerScanParams
+
+	mx sync.Mutex
+	context.Context
 }
 
 func (c *Ctx) Log(a ...interface{}) {
@@ -36,22 +29,17 @@ func (c *Ctx) Logf(f string, a ...interface{}) {
 }
 
 func (c *Ctx) LogReplace(a ...string) {
-	scanSuccess := len(*c.ScanSuccessList.Load())
-	scanFailed := len(*c.ScanFailedList.Load())
-	scanComplete := atomic.LoadInt32(&c.ScanComplete)
-	totalTasks := len(c.dataList)
-
-	var scanCompletePercentage float64
-	if totalTasks > 0 {
-		scanCompletePercentage = float64(scanComplete) / float64(totalTasks) * 100
-	}
-
+	scanSuccess := len(c.ScanSuccessList)
+	scanFailed := len(c.ScanFailedList)
+	scanCompletePercentage := float64(c.ScanComplete) / float64(len(c.dataList)) * 100
 	s := fmt.Sprintf(
-		"  %.2f%% - C: %d / %d - S: %d - F: %d - %s", scanCompletePercentage, scanComplete, totalTasks, scanSuccess, scanFailed, strings.Join(a, " "),
+		"  %.2f%% - C: %d / %d - S: %d - F: %d - %s", scanCompletePercentage, c.ScanComplete, len(c.dataList), scanSuccess, scanFailed, strings.Join(a, " "),
 	)
 
-	if termWidth, _, err := terminal.Dimensions(); err == nil {
-		if w := int(termWidth) - 3; len(s) >= w {
+	termWidth, _, err := terminal.Dimensions()
+	if err == nil {
+		w := int(termWidth) - 3
+		if len(s) >= w {
 			s = s[:w] + "..."
 		}
 	}
@@ -64,19 +52,25 @@ func (c *Ctx) LogReplacef(f string, a ...interface{}) {
 }
 
 func (c *Ctx) ScanSuccess(a interface{}, fn func()) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
 	if fn != nil {
 		fn()
 	}
-	newList := append(*c.ScanSuccessList.Load(), a)
-	c.ScanSuccessList.Store(&newList)
+
+	c.ScanSuccessList = append(c.ScanSuccessList, a)
 }
 
 func (c *Ctx) ScanFailed(a interface{}, fn func()) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
 	if fn != nil {
 		fn()
 	}
-	newList := append(*c.ScanFailedList.Load(), a)
-	c.ScanFailedList.Store(&newList)
+
+	c.ScanFailedList = append(c.ScanFailedList, a)
 }
 
 type QueueScannerScanParams struct {
@@ -91,19 +85,19 @@ type QueueScanner struct {
 	scanFunc QueueScannerScanFunc
 	queue    chan *QueueScannerScanParams
 	wg       sync.WaitGroup
-	ctx      *Ctx
+
+	ctx *Ctx
 }
 
 func NewQueueScanner(threads int, scanFunc QueueScannerScanFunc) *QueueScanner {
 	t := &QueueScanner{
 		threads:  threads,
 		scanFunc: scanFunc,
-		queue:    make(chan *QueueScannerScanParams, threads*2),
-		ctx:      NewCtx(),
+		queue:    make(chan *QueueScannerScanParams),
+		ctx:      &Ctx{},
 	}
 
 	for i := 0; i < t.threads; i++ {
-		t.wg.Add(1)
 		go t.run()
 	}
 
@@ -111,11 +105,23 @@ func NewQueueScanner(threads int, scanFunc QueueScannerScanFunc) *QueueScanner {
 }
 
 func (s *QueueScanner) run() {
+	s.wg.Add(1)
 	defer s.wg.Done()
-	for a := range s.queue {
+
+	for {
+		a, ok := <-s.queue
+		if !ok {
+			break
+		}
+
 		s.ctx.LogReplace(a.Name)
+
 		s.scanFunc(s.ctx, a)
-		atomic.AddInt32(&s.ctx.ScanComplete, 1)
+
+		s.ctx.mx.Lock()
+		s.ctx.ScanComplete++
+		s.ctx.mx.Unlock()
+
 		s.ctx.LogReplace(a.Name)
 	}
 }
@@ -125,12 +131,10 @@ func (s *QueueScanner) Add(dataList ...*QueueScannerScanParams) {
 }
 
 func (s *QueueScanner) Start(doneFunc QueueScannerDoneFunc) {
-	go func() {
-		for _, data := range s.ctx.dataList {
-			s.queue <- data
-		}
-		close(s.queue)
-	}()
+	for _, data := range s.ctx.dataList {
+		s.queue <- data
+	}
+	close(s.queue)
 
 	s.wg.Wait()
 

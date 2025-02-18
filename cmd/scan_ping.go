@@ -7,92 +7,159 @@ import (
 	"os"
 	"time"
 
-	"github.com/Ayanrajpoot10/bugscanx-go/pkg/queuescanner"
 	"github.com/spf13/cobra"
+	"github.com/Ayanrajpoot10/bugscanx-go/pkg/queuescanner"
 )
+
+// pingCmd represents the ping subcommand
+var pingCmd = &cobra.Command{
+	Use:   "ping",
+	Short: "Ping hosts specified in a file",
+	Run: pingRun,
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if pingFlagFilename == "" {
+			return fmt.Errorf("filename is required")
+		}
+		if pingFlagTimeout <= 0 {
+			return fmt.Errorf("timeout must be greater than 0")
+		}
+		return nil
+	},
+}
 
 var (
 	pingFlagFilename string
 	pingFlagTimeout  int
 	pingFlagOutput   string
+	pingFlagTCP      bool
 	pingFlagPort     int
 )
 
-var scanPingCmd = &cobra.Command{
-	Use:   "ping",
-	Short: "Scan using TCP ping",
-	Run:   pingRun,
-}
-
 func init() {
-	scanCmd.AddCommand(scanPingCmd)
-	scanPingCmd.Flags().StringVarP(&pingFlagFilename, "filename", "f", "", "domain list filename (required)")
-	scanPingCmd.Flags().IntVarP(&pingFlagPort, "port", "p", 80, "Port for TCP ping")
-	scanPingCmd.Flags().IntVar(&pingFlagTimeout, "timeout", 2, "Ping timeout")
-	scanPingCmd.Flags().StringVarP(&pingFlagOutput, "output", "o", "", "output results")
-	
-	scanPingCmd.MarkFlagRequired("filename")
-}
+	scanCmd.AddCommand(pingCmd)
 
-type pingRequest struct {
-	Host string
-}
+	pingCmd.Flags().StringVarP(&pingFlagFilename, "filename", "f", "", "File containing hosts to ping (required)")
+	pingCmd.Flags().IntVar(&pingFlagTimeout, "timeout", 2, "Ping timeout in seconds (must be greater than 0)")
+	pingCmd.Flags().StringVarP(&pingFlagOutput, "output", "o", "", "File to write results")
+	pingCmd.Flags().BoolVar(&pingFlagTCP, "tcp", false, "Use TCP ping instead of ICMP")
+	pingCmd.Flags().IntVar(&pingFlagPort, "port", 80, "Port to use for TCP ping")
 
-func pingHostTCP(ctx *queuescanner.Ctx, params *queuescanner.QueueScannerScanParams) {
-	req := params.Data.(*pingRequest)
-	addr := net.JoinHostPort(req.Host, fmt.Sprintf("%d", pingFlagPort))
-	conn, err := net.DialTimeout("tcp", addr, time.Duration(pingFlagTimeout)*time.Second)
-	if err != nil {
-		ctx.ScanFailed(req.Host, nil)
-		return
-	}
-	defer conn.Close()
-	ctx.ScanSuccess(req.Host, func() { ctx.Log(fmt.Sprintf("UP: %-20s", req.Host)) })
+	pingCmd.MarkFlagRequired("filename")
 }
 
 func pingRun(cmd *cobra.Command, args []string) {
-	domainList := make(map[string]bool)
-	domainListFile, err := os.Open(pingFlagFilename)
+	if pingFlagFilename == "" {
+		fmt.Println("Please specify a file using the -f flag.")
+		return
+	}
+
+	hosts, err := readHostsFromFile(pingFlagFilename)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
-	defer domainListFile.Close()
-
-	scanner := bufio.NewScanner(domainListFile)
-	for scanner.Scan() {
-		domain := scanner.Text()
-		domainList[domain] = true
+		fmt.Printf("Error reading file: %v\n", err)
+		return
 	}
 
-	queueScanner := queuescanner.NewQueueScanner(scanFlagThreads, pingHostTCP)
+	colorM1.Printf("\n%-15s %-20s\n", "Status", "Host")
+	colorW1.Printf("%-15s %-20s\n", "--------", "--------")
 
-	fmt.Printf("%-10s %-20s\n------     -----\n", "Status", "Host")
-
-	for domain := range domainList {
-		queueScanner.Add(&queuescanner.QueueScannerScanParams{
-			Name: domain,
-			Data: &pingRequest{Host: domain},
-		})
+	scanner := queuescanner.NewQueueScanner(scanFlagThreads, pingHost)
+	for _, host := range hosts {
+		scanner.Add(&queuescanner.QueueScannerScanParams{Name: host, Data: host})
 	}
 
-	queueScanner.Start(func(ctx *queuescanner.Ctx) {
-		ctx.Log("")
+	scanner.Start(func(ctx *queuescanner.Ctx) {
+		fmt.Printf("Success: %d, Failed: %d\n", len(ctx.ScanSuccessList), len(ctx.ScanFailedList))
 		if pingFlagOutput != "" {
-			outputFile, err := os.Create(pingFlagOutput)
-			if err != nil {
-				fmt.Printf("Failed to create output file: %v\n", err)
-				return
-			}
-			defer outputFile.Close()
-
-			for _, success := range *ctx.ScanSuccessList.Load() {
-				_, err := outputFile.WriteString(success.(string) + "\n")
-				if err != nil {
-					fmt.Printf("Error writing to file: %v\n", err)
-					break
-				}
-			}
+			writeResultsToFile(pingFlagOutput, ctx)
 		}
 	})
+}
+
+// readHostsFromFile reads hosts from a file
+func readHostsFromFile(filename string) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var hosts []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		host := scanner.Text()
+		if host != "" {
+			hosts = append(hosts, host)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return hosts, nil
+}
+
+// pingHost is the scanning function used by QueueScanner
+func pingHost(ctx *queuescanner.Ctx, params *queuescanner.QueueScannerScanParams) {
+	host := params.Data.(string)
+	if pingFlagTCP {
+		pingHostTCP(ctx, host)
+	} else {
+		pingHostICMP(ctx, host)
+	}
+}
+
+func pingHostICMP(ctx *queuescanner.Ctx, host string) {
+	addr, err := net.ResolveIPAddr("ip", host)
+	if err != nil {
+		ctx.ScanFailed(host, func() {
+			ctx.Log(colorB1.Sprintf("%-15s%-20s", "Not Resolved:", host))
+		})
+		return
+	}
+
+	conn, err := net.DialTimeout("ip4:icmp", addr.String(), time.Duration(pingFlagTimeout)*time.Second)
+	if err != nil {
+		ctx.ScanFailed(host, func() {
+			ctx.Log(colorR1.Sprintf("%-15s%-20s", "failed:", host))
+		})
+		return
+	}
+	defer conn.Close()
+
+	ctx.ScanSuccess(host, func() {
+		ctx.Log(colorG1.Sprintf("%-15s%-20s", "succeeded:", host))
+	})
+}
+
+func pingHostTCP(ctx *queuescanner.Ctx, host string) {
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, fmt.Sprintf("%d", pingFlagPort)), time.Duration(pingFlagTimeout)*time.Second)
+	if err != nil {
+		ctx.ScanFailed(host, func() {
+			ctx.Log(colorR1.Sprintf("%-15s%-20s", "failed:", host))
+		})
+		return
+	}
+	defer conn.Close()
+
+	ctx.ScanSuccess(host, func() {
+		ctx.Log(colorG1.Sprintf("%-15s%-20s", "succeeded:", host))
+	})
+}
+
+// writeResultsToFile writes ping results to the specified output file
+func writeResultsToFile(filename string, ctx *queuescanner.Ctx) {
+	file, err := os.Create(filename)
+	if err != nil {
+		fmt.Printf("Error creating output file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+	defer writer.Flush()
+
+	for _, success := range ctx.ScanSuccessList {
+		writer.WriteString(fmt.Sprintf("%v\n", success))
+	}
 }

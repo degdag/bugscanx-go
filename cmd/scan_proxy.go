@@ -80,7 +80,6 @@ func scanProxy(c *queuescanner.Ctx, p *queuescanner.QueueScannerScanParams) {
 
 	var conn net.Conn
 	var err error
-
 	dnsErr := new(net.DNSError)
 
 	proxyHostPort := fmt.Sprintf("%s:%d", req.ProxyHost, req.ProxyPort)
@@ -129,16 +128,13 @@ func scanProxy(c *queuescanner.Ctx, p *queuescanner.QueueScannerScanParams) {
 
 		_, err = conn.Write([]byte(payload))
 		if err != nil {
+			chanResult <- false
 			return
-		}
-
-		res := &scanProxyResponse{
-			Request:      req,
-			ResponseLine: make([]string, 0),
 		}
 
 		scanner := bufio.NewScanner(conn)
 		isPrefix := true
+		responseLines := make([]string, 0)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line == "" {
@@ -146,29 +142,55 @@ func scanProxy(c *queuescanner.Ctx, p *queuescanner.QueueScannerScanParams) {
 			}
 			if isPrefix || strings.HasPrefix(line, "Location") || strings.HasPrefix(line, "Server") {
 				isPrefix = false
-				res.ResponseLine = append(res.ResponseLine, line)
+				responseLines = append(responseLines, line)
 			}
 		}
 
-		resColor := colorD1
-
-		if len(res.ResponseLine) > 0 && strings.Contains(res.ResponseLine[0], " 101 ") {
-			resColor = colorG1
-			c.ScanSuccess(res, nil)
+		// If the response lines are empty, treat it as an error or timeout
+		if len(responseLines) == 0 {
+			c.Log(colorR1.Sprintf("%s - Timeout", proxyHostPort))
+			chanResult <- false
+			return
 		}
 
-		c.Log(resColor.Sprintf("%-32s  %s", proxyHostPort, strings.Join(res.ResponseLine, " -- ")))
+		// Log and save the result based on status
+		if strings.Contains(responseLines[0], " 302 ") {
+			c.Log(colorY1.Sprintf("%-32s Skipping 302 Response", proxyHostPort))
+			chanResult <- true
+			return
+		}
+
+		// Log the response
+		var resultString string
+		if strings.Contains(responseLines[0], " 101 ") {
+			resultString = colorG1.Sprintf("%-32s %s", proxyHostPort, strings.Join(responseLines, " -- "))
+		} else {
+			resultString = fmt.Sprintf("%-32s %s", proxyHostPort, strings.Join(responseLines, " -- "))
+		}
+		c.Log(resultString)
+
+		// Save the result if output file is specified
+		if scanProxyFlagOutput != "" {
+			f, err := os.OpenFile(scanProxyFlagOutput, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err == nil {
+				defer f.Close()
+				f.WriteString(resultString + "\n")
+			}
+		}
 
 		chanResult <- true
 	}()
 
 	select {
-	case <-chanResult:
-		return
+	case success := <-chanResult:
+		if !success {
+			c.Log(colorR1.Sprintf("Failed to process: %s", proxyHostPort))
+		}
 	case <-ctxResultTimeout.Done():
-		return
+		c.Log(colorR1.Sprintf("Timeout: %s", proxyHostPort))
 	}
 }
+
 
 func getScanProxyPayloadDecoded(bug ...string) string {
 	payload := scanProxyFlagPayload
@@ -215,6 +237,8 @@ func runScanProxy(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	//
+
 	queueScanner := queuescanner.NewQueueScanner(scanFlagThreads, scanProxy)
 	regexpIsIP := regexp.MustCompile(`\d+$`)
 
@@ -249,13 +273,13 @@ func runScanProxy(cmd *cobra.Command, args []string) {
 	fmt.Printf("%s\n\n", getScanProxyPayloadDecoded())
 
 	queueScanner.Start(func(c *queuescanner.Ctx) {
-		if len(*c.ScanSuccessList.Load()) == 0 {
+		if len(c.ScanSuccessList) == 0 {
 			return
 		}
 
 		c.Log("\n")
 
-		for _, scanSuccess := range *c.ScanSuccessList.Load() {
+		for _, scanSuccess := range c.ScanSuccessList {
 			res := scanSuccess.(*scanProxyResponse)
 			requestHostPort := fmt.Sprintf("%s:%d", res.Request.ProxyHost, res.Request.ProxyPort)
 			requestTargetBug := fmt.Sprintf("%s -- %s", res.Request.Target, res.Request.Bug)
@@ -265,7 +289,7 @@ func runScanProxy(cmd *cobra.Command, args []string) {
 			c.Log(colorG1.Sprintf("%-32s  %s -- %s", requestHostPort, requestTargetBug, res.Request.Payload))
 		}
 
-		jsonBytes, err := json.MarshalIndent(*c.ScanSuccessList.Load(), "", "  ")
+		jsonBytes, err := json.MarshalIndent(c.ScanSuccessList, "", "  ")
 		if err != nil {
 			fmt.Println(err.Error())
 			os.Exit(1)

@@ -10,8 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Ayanrajpoot10/bugscanx-go/pkg/queuescanner"
 	"github.com/spf13/cobra"
+
+	"github.com/Ayanrajpoot10/bugscanx-go/pkg/queuescanner"
 )
 
 var sniCmd = &cobra.Command{
@@ -33,11 +34,14 @@ func init() {
 	sniCmd.Flags().IntVarP(&sniFlagDeep, "deep", "d", 0, "deep subdomain")
 	sniCmd.Flags().IntVar(&sniFlagTimeout, "timeout", 3, "handshake timeout")
 
+	sniCmd.MarkFlagFilename("filename")
 	sniCmd.MarkFlagRequired("filename")
 }
 
 func scanSNI(c *queuescanner.Ctx, p *queuescanner.QueueScannerScanParams) {
 	domain := p.Data.(string)
+
+	//
 
 	var conn net.Conn
 	var err error
@@ -99,6 +103,8 @@ func runScanSNI(cmd *cobra.Command, args []string) {
 		}
 		mapDomainList[domain] = true
 	}
+
+	//
 
 	queueScanner := queuescanner.NewQueueScanner(scanFlagThreads, scanSNI)
 	for domain := range mapDomainList {
